@@ -18,6 +18,11 @@ const int IN4 = 36;
 // Servo Motor Pin
 const int servoMotor = 11;
 
+// Distance Sensor assigment
+const int distSensor = A1;
+
+// Distance Sensor assigment
+const int freqPin = 7;
 
 //// Driver Set Up ////
 
@@ -37,6 +42,8 @@ QTRSensors qtr;
 Encoder myEnc1(7, 9);
 Encoder myEnc2(8, 10);
 
+
+
 //// Sensor Setup ////
 
 // Line Sensor Setup //
@@ -49,7 +56,8 @@ int m1c = 0, m2c = 0;                                              //declare and
 int16_t Sensor_value_unbiased[8];                                  // unbiased sensor readings
 int16_t sensor_bias[8] = { 92, 152, 432, 92, 92, 100, 260, 152 };  // sensor biases
 int16_t sensor_loc[8] = { 0, 0.8, 1.6, 2.4, 3.2, 4 };              // distances between sensors
-// stroage vals for Line Sensor
+
+// storage vals for Line Sensor
 double num;
 double denom;
 double d;
@@ -62,12 +70,10 @@ int countsPerRev = 64;   // encoder counts per Rev
 double rw = 4.2;         // wheel radius in cm
 double D = 26;           // distance between wheels in cm
 
-
-// Distance Sensor assigment
-const int distSensor = A1;
-
+// Distance Sensor
 
 bool approach = false;
+bool atWall = true;
 
 //// Program Driven Variables ////
 
@@ -79,6 +85,8 @@ bool firstLoop = true;
 char direction = 'forward';
 // Determines if intersection has been reached
 bool intersetionReached = false;
+// determines if robot is in safe or danger zone
+bool safeZone = true;
 
 
 void setup() {
@@ -100,6 +108,9 @@ void setup() {
   // Initializes Line Sensor
   qtr.setTypeRC();
   qtr.setSensorPins((const uint8_t[]){ 53, 51, 47, 31, 29, 27, 25, 23 }, SensorCount);
+
+  // frequency pin
+  pinMode(freqPin, INPUT_PULLUP);
 }
 
 void loop() {
@@ -110,7 +121,11 @@ void loop() {
     switch (direction) {
       case 'forward':
 
-        CheckIntersection();
+        if (safeZone)
+          CheckIntersection();
+        else
+          CheckWall();
+
 
         LineFollow();
 
@@ -217,5 +232,45 @@ void Turn(void) {
 
     theta1_old = theta1;
     theta2_old = theta2;
+  }
+
+  safeZone = false;
+}
+
+void CheckWall(void) {
+  if (analogRead(distSensor) > 60 && aproach) {
+    mdWheels.setSpeeds(0, 0);
+    atWall = true;
+    approach = false;
+  }
+
+  else if (analogRead(distSensor) < 40) {
+    approach = true;
+    // CalcWormRate();
+  }
+}
+
+void CalcWormRate(void) {
+
+  long pulseTimeLow = 0;
+  long pulseTimeHigh = 0;
+  long pulseSum = 0;
+  long timeOutDuration = 20000;
+  float freq[2];
+
+  double t0 = millis();
+  double t;
+
+  for (int ii = 0; ii < 2; ii++) {
+    pulseTimeLow = pulseIn(freqPin, LOW, timeOutDuration);
+    pulseTimeHigh = pulseIn(freqPin, HIGH, timeOutDuration);
+    pulseSum = pulseTimeLow + pulseTimeHigh;
+
+    freq[ii] = 1 / (float(pulseSum)) * 1000000.0;
+
+    if (ii == 0)
+      delay(500);
+    else
+      t = millis();
   }
 }
