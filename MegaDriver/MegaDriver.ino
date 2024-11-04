@@ -4,7 +4,9 @@
 #include <PWMServo.h>
 #include <QTRSensors.h>
 #include <Encoder.h>
-
+// Encoder drivers
+Encoder myEnc1(18, 19);
+Encoder myEnc2(20, 21);
 //// Pins ////
 
 // Rack and Pinnion Motor
@@ -40,10 +42,6 @@ PWMServo armServo;
 
 // Line Sensor driver
 QTRSensors qtr;
-
-// Encoder drivers
-Encoder myEnc1(18, 19);
-Encoder myEnc2(20, 21);
 
 
 //// Sensor Setup ////
@@ -93,7 +91,7 @@ void setup() {
   // Computer Baud Rate
   Serial.begin(9600);
   // Uno Comm Baud Rate
-  Serial1.begin(9600);
+  Serial2.begin(9600);
 
   // Initialize Drive Motors
   mdWheels.init();
@@ -117,29 +115,29 @@ void loop() {
 
   // If activation signal is sent from uno, startDriving
   if (active.equals("1")) {
-    if (!(atWall))
-      switch (direction) {
-        case 1:
+    // if (!(atWall))
+    switch (direction) {
+      case 1:
 
-          if (safeZone)
-            CheckIntersection();
-          else {
-            CheckWall();
-            if (atWall)
-              break;
-          }
+        if (safeZone)
+          CheckIntersection();
+        else {
+          CheckWall();
+          if (atWall)
+            break;
+        }
 
-          LineFollow();
+        LineFollow();
 
-          break;
-      }
-    else if (!(atRefinery)) {
-
-      switch (CheckBlock()) {
-        case 1:
-          PushBlock();
-      }
+        break;
     }
+    // else if (!(atRefinery)) {
+
+    //   switch (CheckBlock()) {
+    //     case 1:
+    //       PushBlock();
+    //   }
+    // }
   }
 }
 
@@ -189,6 +187,7 @@ void CheckIntersection(void) {
 
   avg = sum / numSensors;
 
+
   if (avg > 1500) {
     Turn();
   }
@@ -198,8 +197,6 @@ void Turn(void) {
 
   // stops bot
   mdWheels.setSpeeds(0, 0);
-
-  delay(1000);
 
   // Time variables
   double t, t_old, deltaT, print_time, t0 = 0;
@@ -240,16 +237,19 @@ void Turn(void) {
   omega1_des = 50 / 10 / rw;
   omega2_des = -omega1_des;
 
+  myEnc1.write(0);
+  myEnc2.write(0);
+
   while (abs(theta1) <= abs(theta1_final) || abs(theta2) <= abs(theta2_final)) {
 
     t = micros() / 1000000. - t0;  // Current time in seconds since start
     deltaT = t - t_old;            // Sample time
 
     // Read encoder counts and calculate wheel positions and velocities
-    counts1 = myEnc1.read();
-    counts2 = -myEnc2.read();
+    counts1 = -myEnc1.read();
+    counts2 = myEnc2.read();
 
-    Serial.println(counts1);
+
 
     theta1 = -counts1 * 360 / (countsPerRev * GearRatio) * (M_PI / 180);
     theta2 = -counts2 * 360 / (countsPerRev * GearRatio) * (M_PI / 180);
@@ -337,49 +337,43 @@ void CalcWormRate(void) {
 void GrabBlock(void) {
 
   // rotate arm up
-  armServo.write(90);
+  // armServo.write(90);
 
   // move arm forward
-  mdRP.setM1Speed(400);
-
-  delay(1000);
+  // mdRP.setM1Speed(400);
 
   // stop moving
-  mdRP.setM1Brake(400);
-  mdRP.setM1Speed(0);
+  // mdRP.setM1Brake(400);
+  // mdRP.setM1Speed(0);
 
   // rotate arm down
-  armServo.write(0);
+  // armServo.write(0);
 }
 
 int CheckBlock(void) {
 
-  if(abs(analogRead(hallSensor)) > 100)
+  if (abs(analogRead(hallSensor)) > 100)
     return 1;
-  
+
   // need to add check color
 }
 
 void PushBlock(void) {
   // rotate arm up
-  armServo.write(90);
+  // armServo.write(90);
 
   // move arm backward
-  mdRP.setM1Speed(-400);
-
-  delay(1000);
+  // mdRP.setM1Speed(-400);
 
   // stop moving
-  mdRP.setM1Brake(400);
-  mdRP.setM1Speed(0);
+  // mdRP.setM1Brake(400);
+  // mdRP.setM1Speed(0);
 
   // rotate arm down
-  armServo.write(0);
+  // armServo.write(0);
 
   // move arm forward
-  mdRP.setM1Speed(400);
-
-  delay(1000);
+  // mdRP.setM1Speed(400);
 }
 
 void CheckColor(void) {
