@@ -4,9 +4,7 @@
 #include <PWMServo.h>
 #include <QTRSensors.h>
 #include <Encoder.h>
-// Encoder drivers
-Encoder myEnc1(18, 19);
-Encoder myEnc2(20, 21);
+
 //// Pins ////
 
 // Rack and Pinnion Motor
@@ -27,7 +25,7 @@ const int distSensor = A1;
 const int freqPin = 7;
 
 // hall effect sensor
-const int hallSensor = A1;
+const int hallSensor = A2;
 
 //// Driver Set Up ////
 
@@ -43,18 +41,23 @@ PWMServo armServo;
 // Line Sensor driver
 QTRSensors qtr;
 
+// Encoder drivers
+Encoder myEnc1(18, 19);
+Encoder myEnc2(20, 21);
 
 //// Sensor Setup ////
 
 // Line Sensor Setup //
-const uint8_t SensorCount = 8;                                     // # of sensors in reflectance array
-uint16_t sensorValues[SensorCount];                                //reflectance sensor readings
-double kpLineSensor = 60;                                          //Proportional Gain for Line Following
-double base_speed = 75;                                            //Nominal speed of robot
-int m1c = 0, m2c = 0;                                              //declare and initialize motor commands
-int16_t Sensor_value_unbiased[8];                                  // unbiased sensor readings
-int16_t sensor_bias[8] = { 92, 152, 432, 92, 92, 100, 260, 152 };  // sensor biases
-int16_t sensor_loc[8] = { 0, 0.8, 1.6, 2.4, 3.2, 4 };              // distances between sensors
+const uint8_t SensorCount = 8;       // # of sensors in reflectance array
+uint16_t sensorValues[SensorCount];  //reflectance sensor readings
+double kpLineSensor = 60;            //Proportional Gain for Line Following
+double base_speed = 75;              //Nominal speed of robot
+int m1c = 0, m2c = 0;                //declare and initialize motor commands
+int16_t Sensor_value_unbiased[8];    // unbiased sensor readings
+
+/// !!!! Run TestLineSensor and adjust values on new surface!!!!
+int16_t sensor_bias[8] = { 428, 480, 816, 428, 480, 480, 592, 592 };  // sensor biases
+int16_t sensor_loc[8] = { 0, 0.8, 1.6, 2.4, 3.2, 4 };                 // distances between sensors
 
 // storage vals for Line Sensor
 
@@ -69,7 +72,7 @@ double D = 26;           // distance between wheels in cm
 // Distance Sensor
 
 bool approach = false;
-bool atWall = true;
+bool atWall = false;
 
 //// Program Driven Variables ////
 
@@ -79,13 +82,26 @@ String active = "1";
 bool firstLoop = true;
 // determines the direction the robot is driving ( 1 forward / 0 backward)
 int direction = 1;
-// Determines if intersection has been reached
-bool intersetionReached = false;
 // determines if robot is in safe or danger zone
 bool safeZone = true;
+
+// Refinery Varibables
+
 // determines if robot is at the refinery
 bool atRefinery = false;
+// determines if the robot is going to the refinery
+bool goingToRefinery = false;
 
+// Intersection variables
+
+// Determines if intersection has been reached
+bool intersetionReached = false;
+// Defines what intersection is currently active
+int activeIntersection = 1;
+// Defines what intersection the robot is currently at
+int currIntersection = 1;
+// Checks whether line sensor is on intersection
+bool onIntersection = false;
 
 void setup() {
   // Computer Baud Rate
@@ -119,25 +135,25 @@ void loop() {
     switch (direction) {
       case 1:
 
-        if (safeZone)
-          CheckIntersection();
-        else {
-          CheckWall();
-          if (atWall)
-            break;
-        }
+        if (!(goingToRefinery))
+          if (safeZone)
+            CheckIntersection();
+          else {
+            CheckWall();
+            if (atWall)
+              GrabBlock();
+          }
 
         LineFollow();
 
         break;
-    }
-    // else if (!(atRefinery)) {
 
-    //   switch (CheckBlock()) {
-    //     case 1:
-    //       PushBlock();
-    //   }
-    // }
+      case 0:
+
+        mdWheels.setSpeeds(100, -100);
+        LineFollow();
+        CheckIntersection();
+    }
   }
 }
 
@@ -154,6 +170,9 @@ void LineFollow(void) {
   for (uint8_t i = 0; i < 8; i++) {
     Sensor_value_unbiased[i] = sensorValues[i] - sensor_bias[i];
   }
+
+  if (direction == 0)
+    return;
 
   for (uint8_t i = 0; i < 8; i++) {
     num += Sensor_value_unbiased[i] * sensor_loc[i];
@@ -187,9 +206,35 @@ void CheckIntersection(void) {
 
   avg = sum / numSensors;
 
-
-  if (avg > 1500) {
-    Turn();
+  if (direction == 0) {
+    if (avg > 1000) {
+      Turn();
+      mdWheels.setSpeeds(0, 0);
+      delay(1000);
+      mdWheels.setSpeeds(-75, 50);
+      delay(250);
+      mdWheels.setSpeeds(0, 0);
+      direction = 1;
+      goingToRefinery = true;
+    }
+  } else {
+    if (avg > 1200) {
+      if (currIntersection != activeIntersection) {
+        if (onIntersection) {
+          return;
+        } else {
+          onIntersection = true;
+          return;
+        }
+      } else {
+        Turn();
+      }
+    } else {
+      if (onIntersection) {
+        currIntersection += 1;
+        onIntersection = false;
+      }
+    }
   }
 }
 
@@ -217,8 +262,8 @@ void Turn(void) {
   double xF = 50;   // Target distance in cm
 
   // Desired and actual state variables
-  double theta1, theta1_old = 0, omega1;
-  double theta2, theta2_old = 0, omega2;
+  double theta1 = 0, theta1_old = 0, omega1 = 0;
+  double theta2 = 0, theta2_old = 0, omega2 = 0;
   double theta1_des = 0, theta2_des = 0;
   double theta1_final, theta2_final;
   double omega1_des, omega2_des;
@@ -230,26 +275,38 @@ void Turn(void) {
   t0 = micros() / 1000000.;
 
   // turn
-  theta1_final = ((M_PI / 4) * (D / 2)) / rw;
-  theta2_final = -(M_PI / 4) * (D / 2) / (rw);
+  float angle;
+
+  switch (activeIntersection) {
+    case (1):
+      angle = (M_PI / 6);
+      break;
+    case (2):
+      angle = (M_PI / 10);
+      break;
+    case (3):
+      angle = (M_PI / 12);
+      break;
+  };
+
+  theta1_final = angle * (D / 2) / rw;
+  theta2_final = -angle * (D / 2) / rw;
 
   // Set the desired velocity in radians/s
-  omega1_des = 50 / 10 / rw;
+  omega1_des = 2;
   omega2_des = -omega1_des;
 
   myEnc1.write(0);
   myEnc2.write(0);
 
-  while (abs(theta1) <= abs(theta1_final) || abs(theta2) <= abs(theta2_final)) {
+  while (true) {
 
     t = micros() / 1000000. - t0;  // Current time in seconds since start
     deltaT = t - t_old;            // Sample time
 
     // Read encoder counts and calculate wheel positions and velocities
-    counts1 = -myEnc1.read();
-    counts2 = myEnc2.read();
-
-
+    counts1 = myEnc1.read();
+    counts2 = -myEnc2.read();
 
     theta1 = -counts1 * 360 / (countsPerRev * GearRatio) * (M_PI / 180);
     theta2 = -counts2 * 360 / (countsPerRev * GearRatio) * (M_PI / 180);
@@ -270,6 +327,10 @@ void Turn(void) {
     V1m += correction;
     V2m -= correction;
 
+    if (abs(theta1) >= abs(theta1_final) || abs(theta2) >= abs(theta2_final)) {
+      break;
+    }
+
     // Constrain motor commands within safe range
     V1m = constrain(V1m, -12, 12);
     V2m = constrain(V2m, -12, 12);
@@ -277,7 +338,7 @@ void Turn(void) {
     m2c = 400 * V2m / 12;
 
     // Set motor speeds
-    mdWheels.setSpeeds(-m1c, m2c);
+    mdWheels.setSpeeds(m1c, -m2c);
 
     // Update previous values
     t_old = t;
@@ -285,14 +346,14 @@ void Turn(void) {
     theta2_old = theta2;
   }
 
-  mdWheels.setSpeeds(0, 0);
-
   safeZone = false;
+
+  return;
 }
 
 void CheckWall(void) {
 
-  if (analogRead(distSensor) > 60 && approach) {
+  if (analogRead(distSensor) > 170 && approach) {
     mdWheels.setSpeeds(0, 0);
     atWall = true;
     approach = false;
@@ -335,6 +396,10 @@ void CalcWormRate(void) {
 }
 
 void GrabBlock(void) {
+
+  delay(1000);
+
+  direction = 0;
 
   // rotate arm up
   // armServo.write(90);
