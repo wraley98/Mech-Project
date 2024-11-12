@@ -131,31 +131,36 @@ void loop() {
 
   // If activation signal is sent from uno, startDriving
   if (active.equals("1")) {
-    // if (!(atWall))
     switch (direction) {
       case 1:
 
-        if (!(goingToRefinery))
-          if (safeZone)
+        if (!(goingToRefinery)) {
+          Serial.println("looking for intersection");
+          if (safeZone) {
             CheckIntersection();
-          else {
+          } else {
             CheckWall();
             if (atWall)
               GrabBlock();
           }
+        } else {
+          CheckWall();
+          if (atRefinery)
+            DispenseBlock();
+        }
 
         LineFollow();
 
         break;
 
       case 0:
-
         mdWheels.setSpeeds(100, -100);
-        LineFollow();
         CheckIntersection();
     }
   }
 }
+
+// Drive Functions
 
 void LineFollow(void) {
 
@@ -164,12 +169,7 @@ void LineFollow(void) {
   double error = 0;
   double num = 0;
 
-  qtr.read(sensorValues);  // sensor values will be numbers between 0 and 2500
-
-  // put your line localization code here
-  for (uint8_t i = 0; i < 8; i++) {
-    Sensor_value_unbiased[i] = sensorValues[i] - sensor_bias[i];
-  }
+  GetUnbiased();
 
   if (direction == 0)
     return;
@@ -196,6 +196,8 @@ void CheckIntersection(void) {
   int numSensors;
   double avg = 0;
 
+  GetUnbiased();
+
   if (direction == 1)
     numSensors = 5;
   else
@@ -208,12 +210,11 @@ void CheckIntersection(void) {
 
   if (direction == 0) {
     if (avg > 1000) {
+
+      mdWheels.setSpeeds(0, 0);
+      currIntersection = 0;
       Turn();
-      mdWheels.setSpeeds(0, 0);
-      delay(1000);
-      mdWheels.setSpeeds(-75, 50);
-      delay(250);
-      mdWheels.setSpeeds(0, 0);
+
       direction = 1;
       goingToRefinery = true;
     }
@@ -238,7 +239,19 @@ void CheckIntersection(void) {
   }
 }
 
+void GetUnbiased(void) {
+
+
+  qtr.read(sensorValues);
+
+  for (uint8_t i = 0; i < 8; i++) {
+    Sensor_value_unbiased[i] = sensorValues[i] - sensor_bias[i];
+  }
+}
+
 void Turn(void) {
+
+  delay(250);
 
   // stops bot
   mdWheels.setSpeeds(0, 0);
@@ -277,15 +290,24 @@ void Turn(void) {
   // turn
   float angle;
 
-  switch (activeIntersection) {
+  switch (currIntersection) {
+    case (-1):
+      angle = M_PI / 1.2;
+      break;
+    case (0):
+      mdWheels.setSpeeds(-75, 75);
+      delay(300);
+      mdWheels.setSpeeds(0, 0);
+      angle = M_PI / 4.;
+      break;
     case (1):
-      angle = (M_PI / 6);
+      angle = M_PI / 5.3;
       break;
     case (2):
-      angle = (M_PI / 10);
+      angle = M_PI / 10.;
       break;
     case (3):
-      angle = (M_PI / 12);
+      angle = M_PI / 12.;
       break;
   };
 
@@ -346,24 +368,34 @@ void Turn(void) {
     theta2_old = theta2;
   }
 
-  safeZone = false;
+  if (currIntersection != 0 || currIntersection != -1)
+    safeZone = false;
+
+  else
+    safeZone = true;
 
   return;
 }
 
+// Sensor Functions
+
 void CheckWall(void) {
 
-  if (analogRead(distSensor) > 170 && approach) {
+  if (analogRead(distSensor) > 200)
+    return;
+
+  if (analogRead(distSensor) > 180) {
+    if (goingToRefinery) {
+      mdWheels.setSpeeds(0, 0);
+      atRefinery = true;
+      return;
+    }
+
     mdWheels.setSpeeds(0, 0);
     atWall = true;
     approach = false;
 
     GrabBlock();
-  }
-
-  else if (analogRead(distSensor) < 40) {
-    approach = true;
-    // CalcWormRate();
   }
 }
 
@@ -395,11 +427,14 @@ void CalcWormRate(void) {
   }
 }
 
+// Sand dune Functions
+
 void GrabBlock(void) {
 
   delay(1000);
 
   direction = 0;
+  atWall = false;
 
   // rotate arm up
   // armServo.write(90);
@@ -439,6 +474,26 @@ void PushBlock(void) {
 
   // move arm forward
   // mdRP.setM1Speed(400);
+}
+
+void DispenseBlock(void) {
+
+  mdWheels.setSpeeds(0, 0);
+  delay(1000);
+
+  mdWheels.setSpeeds(75, -75);
+  delay(1500);
+
+  mdWheels.setSpeeds(0, 0);
+
+  currIntersection = -1;
+
+  Turn();
+  safeZone = true;
+  currIntersection = 1;
+  activeIntersection += 1;
+  goingToRefinery = false;
+  atRefinery = false;
 }
 
 void CheckColor(void) {
