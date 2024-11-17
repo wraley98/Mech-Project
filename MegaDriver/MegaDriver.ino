@@ -24,8 +24,16 @@ const int distSensor = A1;
 // Distance Sensor assigment
 const int freqPin = 7;
 
-// hall effect sensor
+// Hall effect sensor
 const int hallSensor = A2;
+
+// Switch pins
+const int frontSwitchPin = 13;
+const int backSwitchPin = 12;
+
+// Color Sensor Pins
+const int s0 = 28, s1 = 26, s2 = 30, s3 = 32;
+int readPin = 24, LEDPin = 22;
 
 //// Driver Set Up ////
 
@@ -51,7 +59,6 @@ Encoder myEnc2(20, 21);
 const uint8_t SensorCount = 8;       // # of sensors in reflectance array
 uint16_t sensorValues[SensorCount];  //reflectance sensor readings
 double kpLineSensor = 60;            //Proportional Gain for Line Following
-double base_speed = 75;              //Nominal speed of robot
 int m1c = 0, m2c = 0;                //declare and initialize motor commands
 int16_t Sensor_value_unbiased[8];    // unbiased sensor readings
 
@@ -59,8 +66,18 @@ int16_t Sensor_value_unbiased[8];    // unbiased sensor readings
 int16_t sensor_bias[8] = { 428, 480, 816, 428, 480, 480, 592, 592 };  // sensor biases
 int16_t sensor_loc[8] = { 0, 0.8, 1.6, 2.4, 3.2, 4 };                 // distances between sensors
 
-// storage vals for Line Sensor
+// Color Sensor
 
+const int numSamples = 8;
+float R[numSamples], G[numSamples], B[numSamples], C[numSamples];  // raw pulse time samples
+float RF, GF, BF, CF;                                              // filtered data
+
+// color ranges {R , G , B}
+float blockRanges[3][3][2] = { { { 0.05, 0.25 }, { 0.15, 0.35 }, { 0.5, 0.7 } },
+                               { { 0.55, 0.75 }, { 0.1, 0.4 }, { 0.15, 0.45 } },
+                               { { 0.4, 0.5 }, { 0.35, 0.55 }, { 0.15, 0.35 } } };
+
+String clrArr[3] = { "Blue", "Red", "Yellow" };
 
 // Encoder Setup
 double kpEncoder = 0.5;  //Proportional Gain for Trajectory Following
@@ -85,6 +102,17 @@ int direction = 1;
 // determines if robot is in safe or danger zone
 bool safeZone = true;
 
+// Worm Variables
+
+// determines how long the robot has until the worm arrives
+double wormTime = 0;
+// maximum acceptable freq of the worm
+int maxWormFreq = 340;
+// determines if the worm rate has been checked
+bool wormRateChecked = false;
+// initial time that the worm time is based on
+double initWormTime;
+
 // Refinery Varibables
 
 // determines if robot is at the refinery
@@ -102,6 +130,12 @@ int activeIntersection = 1;
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
 bool onIntersection = false;
+
+// Robot variables
+// Nominal speed of robot
+double base_speed = 75;
+// RP motore speed
+int rpMotorSpeed = 400;
 
 void setup() {
   // Computer Baud Rate
@@ -123,8 +157,24 @@ void setup() {
   qtr.setTypeRC();
   qtr.setSensorPins((const uint8_t[]){ 53, 51, 47, 31, 29, 27, 25, 23 }, SensorCount);
 
-  // frequency pin
-  pinMode(freqPin, INPUT_PULLUP);
+  // frequency pin setup
+  pinMode(freqPin, INPUT);
+
+  // switch pin setup
+  pinMode(frontSwitchPin, INPUT);
+  pinMode(backSwitchPin, INPUT);
+
+  // Color sensor pin setup
+  pinMode(s0, OUTPUT);
+  pinMode(s1, OUTPUT);
+  pinMode(s2, OUTPUT);
+  pinMode(s3, OUTPUT);
+  pinMode(readPin, INPUT);
+  pinMode(LEDPin, OUTPUT);
+  digitalWrite(s0, LOW);  // s1 and s0 choose frequency scaling
+  digitalWrite(s1, HIGH);
+
+  digitalWrite(LEDPin, HIGH);  //turn on LED
 }
 
 void loop() {
@@ -147,8 +197,18 @@ void loop() {
             // check for wall
             CheckWall();
             // grab the block if the robot is at the wall
-            if (atWall)
+            if (atWall) {
+              if (!(wormRateChecked)) {
+                CheckWormRate();
+                if (direction == 0)
+                  break;
+              } else if (milis() / 1000000. - initWormTime < wormTime) {
+                direction = 0;
+                base_speed = 200;
+                break;
+              }
               GrabBlock();
+            }
           }
         } else {
           // look for refinery wall
@@ -167,7 +227,7 @@ void loop() {
       // if the robot is moving backwards
       case 0:
         // move the robot backwards
-        mdWheels.setSpeeds(100, -100);
+        mdWheels.setSpeeds(base_speed, -base_speed);
         // look for the line
         CheckIntersection();
         break;
@@ -252,6 +312,8 @@ void CheckIntersection(void) {
     if (avg > 1000) {
       // stop the robot
       mdWheels.setSpeeds(0, 0);
+      // reset speed to original
+      base_speed = 75;
       // reset the current intersection
       currIntersection = 0;
       // turn the robot
@@ -359,6 +421,9 @@ void Turn(void) {
   switch (currIntersection) {
     // robot is leaving the refinery
     case (-1):
+      // resets the worm rate checked flag
+      wormRateChecked = false;
+
       angle = M_PI / 1.2;
       break;
     // robot is driving backwards from danger zone
@@ -473,7 +538,7 @@ void CheckWall(void) {
 
   // if the reading is greater than 180, stop
   if (analogRead(distSensor) > 180) {
-   
+
     // if the robot is going to the refinery,
     // set at reinery to true
     if (goingToRefinery) {
@@ -481,7 +546,7 @@ void CheckWall(void) {
       atRefinery = true;
       return;
     }
-    
+
     // stop the robot
     mdWheels.setSpeeds(0, 0);
     // set the robot at the wall is true
@@ -492,101 +557,214 @@ void CheckWall(void) {
   }
 }
 
-/// !!!! Need to Implement!!!!
+/*
+CalcWormRate
+
+Calculates the current estimated time of arrival of the worm.
+*/
 void CalcWormRate(void) {
 
+  double initWormTime = micros() / 1000000.;
+  int rate1 = digitalRead(freqPin);
 
-  /// NEED TO ADD EVAC TIME
+  if (rate1 > maxWormFreq) {
+    base_speed = 200;
+    direction = 0;
+    return;
+  }
 
-  long pulseTimeLow = 0;
-  long pulseTimeHigh = 0;
-  long pulseSum = 0;
-  long timeOutDuration = 20000;
-  float freq[2];
+  double finalWormTime = micros() / 1000000.;
+  int rate2 = digitalRead(freqPin);
 
-  double t0 = millis();
-  double t;
+  double wormVelocity = (rate2 - rate1) / (finalWormTime - initWormTime);
 
-  for (int ii = 0; ii < 2; ii++) {
-    pulseTimeLow = pulseIn(freqPin, LOW, timeOutDuration);
-    pulseTimeHigh = pulseIn(freqPin, HIGH, timeOutDuration);
-    pulseSum = pulseTimeLow + pulseTimeHigh;
+  initWormTime = micros() / 1000000.;
+  wormTime = (maxWormFreq - rate2) / wormVelocity;
 
-    freq[ii] = 1 / (float(pulseSum)) * 1000000.0;
+  wormRateChecked = true;
+}
 
-    if (ii == 0)
-      delay(500);
-    else
-      t = millis();
+int CheckBlock(void) {
+
+  if (abs(analogRead(hallSensor)) > 100) {
+    PushBlock();
+    return;
+  }
+
+  if (CheckColor().equals("Yellow"))
+    PushBlock();
+  else
+    PullBlock();
+}
+
+String CheckColor(void) {
+  // standard deviation
+  float rSTD = 0;
+  float gSTD = 0;
+  float bSTD = 0;
+
+  GetVals();
+
+  float rNorm[8];
+  float gNorm[8];
+  float bNorm[8];
+
+  Normalize(R, rNorm);
+  Normalize(G, gNorm);
+  Normalize(B, bNorm);
+
+  float rAvg = MovingAverage(rNorm);
+  float gAvg = MovingAverage(gNorm);
+  float bAvg = MovingAverage(bNorm);
+
+  String clr = DetermineColor(rAvg, gAvg, bAvg);
+}
+
+float readPulse() {
+  return 1 / ((pulseIn(readPin, LOW) + pulseIn(readPin, HIGH)) / 1000000.);
+}
+
+void GetVals(void) {
+
+  // Take specified number of samples
+  for (int i = 0; i < numSamples; i++) {
+    // Select RED Filter
+    digitalWrite(s2, LOW);
+    digitalWrite(s3, LOW);
+    R[i] = readPulse();
+
+    // Select BLUE Filter
+    digitalWrite(s2, LOW);
+    digitalWrite(s3, HIGH);
+    B[i] = readPulse();
+
+    // Select GREEN Filter
+    digitalWrite(s2, HIGH);
+    digitalWrite(s3, HIGH);
+    G[i] = readPulse();
+
+    // Select CLEAR Filter
+    digitalWrite(s2, HIGH);
+    digitalWrite(s3, LOW);
+    C[i] = readPulse();
   }
 }
 
-// Sand dune Functions
+void Normalize(float* arr, float* normArr) {
 
-/// !!!! Need to Implement !!!!
+  for (int ii = 0; ii < numSamples; ii++)
+    normArr[ii] = arr[ii] / C[ii];
+}
+
+float MovingAverage(float* arr) {
+  float sum = 0;
+  for (int i = 0; i < numSamples; i++) {
+    sum += arr[i] / numSamples;
+  }
+  return sum;
+}
+
+String DetermineColor(float r, float g, float b) {
+
+  float block[3][2];
+
+  for (int ii = 0; ii < 3; ii++) {
+
+    float rLow = blockRanges[ii][0][0];
+    float rHigh = blockRanges[ii][0][1];
+    float gLow = blockRanges[ii][1][0];
+    float gHigh = blockRanges[ii][1][1];
+    float bLow = blockRanges[ii][2][0];
+    float bHigh = blockRanges[ii][2][1];
+
+    String clr = clrArr[ii];
+
+    if (rLow < r && rHigh > r)
+      if (gLow < g && gHigh > g)
+        if (bLow < b && bHigh > b)
+          return clr;
+  }
+  return "";
+}
+
+// Arm Functions
+
 void GrabBlock(void) {
+
+  // send arm forward
+  mdRP.setM1Speed(rpMotorSpeed);
+
+  MoveArmForward();
+
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
+
+  // drop arm
+  armServo.write(180);
+
+  CheckBlock();
+}
+
+void PushBlock(void) {
+
+  // drop arm
+  armServo.write(45);
+
+  mdRP.setM1Speed(-rpMotorSpeed);
 
   delay(1000);
 
-  direction = 0;
-  atWall = false;
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
 
-  // rotate arm up
-  // armServo.write(90);
+  // drop arm
+  armServo.write(160);
 
-  // move arm forward
-  // mdRP.setM1Speed(400);
+  mdRP.setM1Speed(rpMotorSpeed);
 
-  // stop moving
-  // mdRP.setM1Brake(400);
-  // mdRP.setM1Speed(0);
+  delay(1000);
 
-  // rotate arm down
-  // armServo.write(0);
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
 }
 
-/// !!!! Need to Implement !!!!
-int CheckBlock(void) {
+void PullBlock(void) {
 
-  if (abs(analogRead(hallSensor)) > 100)
-    return 1;
+  mdRP.setM1Speed(-rpMotorSpeed);
 
-  // need to add check color
+  MoveArmBackward();
+
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
 }
 
-/// !!!! Need to Implement !!!!
-void PushBlock(void) {
-  // rotate arm up
-  // armServo.write(90);
-
-  // move arm backward
-  // mdRP.setM1Speed(-400);
-
-  // stop moving
-  // mdRP.setM1Brake(400);
-  // mdRP.setM1Speed(0);
-
-  // rotate arm down
-  // armServo.write(0);
-
-  // move arm forward
-  // mdRP.setM1Speed(400);
-}
-
-/// !!!! Need to Implement !!!!
 void DispenseBlock(void) {
 
   mdWheels.setSpeeds(0, 0);
-  delay(1000);
 
-  mdWheels.setSpeeds(75, -75);
-  delay(1500);
+  armServo.write(0);
+
+  mdRP.setM1Speed(rpMotorSpeed);
+
+  MoveArmForward();
+
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
+
+  mdWheels.setSpeeds(base_speed, -base_speed);
 
   mdWheels.setSpeeds(0, 0);
 
   currIntersection = -1;
 
   Turn();
+
+  base_speed = 75;
   safeZone = true;
   currIntersection = 1;
   activeIntersection += 1;
@@ -594,6 +772,20 @@ void DispenseBlock(void) {
   atRefinery = false;
 }
 
-/// !!!! Need to Implement !!!!
-void CheckColor(void) {
+void MoveArmForward(void) {
+  // initial read on pin
+  int frontSwitchVal = digitalRead(frontSwitchPin);
+
+  // read pin until pressed
+  while (frontSwitchVal != 0)
+    frontSwitchVal = digitalRead(frontSwitchPin);
+}
+
+void MoveArmBackward(void) {
+  // initial read on pin
+  int backSwitchVal = digitalRead(backSwitchPin);
+
+  // read pin until pressed
+  while (backSwitchVal != 0)
+    backSwitchVal = digitalRead(backSwitchPin);
 }
