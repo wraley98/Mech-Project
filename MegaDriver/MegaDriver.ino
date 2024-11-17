@@ -21,11 +21,11 @@ const int servoMotor = 11;
 // Distance Sensor assigment
 const int distSensor = A1;
 
-// Distance Sensor assigment
-const int freqPin = 7;
-
 // Hall effect sensor
 const int hallSensor = A2;
+
+// Distance Sensor assigment
+const int freqPin = A3;
 
 // Switch pins
 const int frontSwitchPin = 13;
@@ -63,7 +63,7 @@ int m1c = 0, m2c = 0;                //declare and initialize motor commands
 int16_t Sensor_value_unbiased[8];    // unbiased sensor readings
 
 /// !!!! Run TestLineSensor and adjust values on new surface!!!!
-int16_t sensor_bias[8] = { 428, 480, 816, 428, 480, 480, 592, 592 };  // sensor biases
+int16_t sensor_bias[8] = { 100, 152, 208, 100, 100, 152, 152, 152 };  // sensor biases
 int16_t sensor_loc[8] = { 0, 0.8, 1.6, 2.4, 3.2, 4 };                 // distances between sensors
 
 // Color Sensor
@@ -125,7 +125,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 1;
+int activeIntersection = 2;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -156,9 +156,6 @@ void setup() {
   // Initializes Line Sensor
   qtr.setTypeRC();
   qtr.setSensorPins((const uint8_t[]){ 53, 51, 47, 31, 29, 27, 25, 23 }, SensorCount);
-
-  // frequency pin setup
-  pinMode(freqPin, INPUT);
 
   // switch pin setup
   pinMode(frontSwitchPin, INPUT);
@@ -199,10 +196,10 @@ void loop() {
             // grab the block if the robot is at the wall
             if (atWall) {
               if (!(wormRateChecked)) {
-                CheckWormRate();
+                CalcWormRate();
                 if (direction == 0)
                   break;
-              } else if (milis() / 1000000. - initWormTime < wormTime) {
+              } else if (millis() / 1000000. - initWormTime < wormTime) {
                 direction = 0;
                 base_speed = 200;
                 break;
@@ -376,9 +373,6 @@ robot is currently on.
 */
 void Turn(void) {
 
-  // let the robot drive for .25 seconds
-  delay(250);
-
   // stops bot
   mdWheels.setSpeeds(0, 0);
 
@@ -430,7 +424,7 @@ void Turn(void) {
     case (0):
       // continue driving backwards for 0.3 seconds
       mdWheels.setSpeeds(-75, 75);
-      delay(300);
+      delay(500);
       mdWheels.setSpeeds(0, 0);
       angle = M_PI / 4.;
       break;
@@ -444,6 +438,10 @@ void Turn(void) {
       break;
     // third intersection
     case (3):
+      angle = M_PI / 12.;
+      break;
+    // Fourth intersection
+    case (4):
       angle = M_PI / 12.;
       break;
   };
@@ -584,7 +582,7 @@ void CalcWormRate(void) {
   wormRateChecked = true;
 }
 
-int CheckBlock(void) {
+void CheckBlock(void) {
 
   if (abs(analogRead(hallSensor)) > 100) {
     PushBlock();
