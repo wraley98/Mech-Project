@@ -87,7 +87,6 @@ double rw = 4.2;         // wheel radius in cm
 double D = 26;           // distance between wheels in cm
 
 // Distance Sensor
-
 bool approach = false;
 bool atWall = false;
 
@@ -125,7 +124,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 2;
+int activeIntersection = 1;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -535,7 +534,7 @@ void CheckWall(void) {
     return;
 
   // if the reading is greater than 180, stop
-  if (analogRead(distSensor) > 180) {
+  if (analogRead(distSensor) > 180 && approach) {
 
     // if the robot is going to the refinery,
     // set at reinery to true
@@ -549,9 +548,12 @@ void CheckWall(void) {
     mdWheels.setSpeeds(0, 0);
     // set the robot at the wall is true
     atWall = true;
+    approach = false;
 
     // grab the block
     GrabBlock();
+  } else if (analogRead(distSensor) < 85) {
+    approach = true;
   }
 }
 
@@ -582,20 +584,44 @@ void CalcWormRate(void) {
   wormRateChecked = true;
 }
 
+// Arm Functions
+
+void GrabBlock(void) {
+
+  armServo.write(0);
+
+  // send arm forward
+  mdRP.setM1Speed(rpMotorSpeed);
+  //Serial.println(rpMotorSpeed);
+  MoveArmForward();
+
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
+
+  // drop arm
+  armServo.write(170);
+
+  delay(1000);
+
+  CheckBlock();
+}
+
 void CheckBlock(void) {
 
-  if (abs(analogRead(hallSensor)) > 100) {
-    PushBlock();
-    return;
+  if (abs(analogRead(hallSensor)) < 600 && abs(analogRead(hallSensor)) > 500) {
+    Serial.println("Magnet Block");
+    // PushBlock();
+    // return;
   }
-
-  if (CheckColor().equals("Yellow"))
-    PushBlock();
+  if (CheckColor() == 2)
+    Serial.println("Yellow Block");
+  // PushBlock();
   else
     PullBlock();
 }
 
-String CheckColor(void) {
+int CheckColor(void) {
   // standard deviation
   float rSTD = 0;
   float gSTD = 0;
@@ -615,7 +641,7 @@ String CheckColor(void) {
   float gAvg = MovingAverage(gNorm);
   float bAvg = MovingAverage(bNorm);
 
-  String clr = DetermineColor(rAvg, gAvg, bAvg);
+  int clr = DetermineColor(rAvg, gAvg, bAvg);
 }
 
 float readPulse() {
@@ -662,10 +688,11 @@ float MovingAverage(float* arr) {
   return sum;
 }
 
-String DetermineColor(float r, float g, float b) {
+int DetermineColor(float r, float g, float b) {
 
   float block[3][2];
 
+  // B == 0 / R == 1 / Y == 2
   for (int ii = 0; ii < 3; ii++) {
 
     float rLow = blockRanges[ii][0][0];
@@ -675,39 +702,21 @@ String DetermineColor(float r, float g, float b) {
     float bLow = blockRanges[ii][2][0];
     float bHigh = blockRanges[ii][2][1];
 
-    String clr = clrArr[ii];
-
-    if (rLow < r && rHigh > r)
-      if (gLow < g && gHigh > g)
-        if (bLow < b && bHigh > b)
-          return clr;
+    if (rLow < r && rHigh > r) {
+      if (gLow < g && gHigh > g) {
+        if (bLow < b && bHigh > b) {
+          return ii;
+        }
+      }
+    }
+    return -1;
   }
-  return "";
-}
-
-// Arm Functions
-
-void GrabBlock(void) {
-
-  // send arm forward
-  mdRP.setM1Speed(rpMotorSpeed);
-
-  MoveArmForward();
-
-  // stop the rp motor
-  mdRP.setM1Brake(rpMotorSpeed);
-  mdRP.setM1Speed(0);
-
-  // drop arm
-  armServo.write(180);
-
-  CheckBlock();
 }
 
 void PushBlock(void) {
 
-  // drop arm
-  armServo.write(45);
+  // raise arm
+  armServo.write(180);
 
   mdRP.setM1Speed(-rpMotorSpeed);
 
@@ -718,7 +727,7 @@ void PushBlock(void) {
   mdRP.setM1Speed(0);
 
   // drop arm
-  armServo.write(160);
+  armServo.write(50);
 
   mdRP.setM1Speed(rpMotorSpeed);
 
@@ -738,6 +747,9 @@ void PullBlock(void) {
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
+
+  // raise arm
+  armServo.write(180);
 }
 
 void DispenseBlock(void) {
@@ -754,13 +766,21 @@ void DispenseBlock(void) {
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
 
-  mdWheels.setSpeeds(base_speed, -base_speed);
+  mdRP.setM1Speed(-rpMotorSpeed);
 
-  mdWheels.setSpeeds(0, 0);
+  delay(1200);
+
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
+
+  // mdWheels.setSpeeds(base_speed, -base_speed);
+
+  // mdWheels.setSpeeds(0, 0);
 
   currIntersection = -1;
 
-  Turn();
+  // Turn();
 
   base_speed = 75;
   safeZone = true;
@@ -773,10 +793,12 @@ void DispenseBlock(void) {
 void MoveArmForward(void) {
   // initial read on pin
   int frontSwitchVal = digitalRead(frontSwitchPin);
-
   // read pin until pressed
-  while (frontSwitchVal != 0)
+  while (frontSwitchVal != 0) {
     frontSwitchVal = digitalRead(frontSwitchPin);
+  }
+  // mdRP.setM1Brake(rpMotorSpeed);
+  // mdRP.setM1Speed(0);
 }
 
 void MoveArmBackward(void) {
