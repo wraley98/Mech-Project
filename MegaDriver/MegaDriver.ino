@@ -100,6 +100,8 @@ bool firstLoop = true;
 int direction = 1;
 // determines if robot is in safe or danger zone
 bool safeZone = true;
+// Counts how many blocks have been picked up
+int blockCount = 0;
 
 // Worm Variables
 
@@ -124,7 +126,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 1;
+int activeIntersection = 2;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -151,6 +153,7 @@ void setup() {
 
   // Initialize Servo Motor
   armServo.attach(servoMotor);
+  armServo.write(0);
 
   // Initializes Line Sensor
   qtr.setTypeRC();
@@ -194,15 +197,15 @@ void loop() {
             CheckWall();
             // grab the block if the robot is at the wall
             if (atWall) {
-              if (!(wormRateChecked)) {
-                CalcWormRate();
-                if (direction == 0)
-                  break;
-              } else if (millis() / 1000000. - initWormTime < wormTime) {
-                direction = 0;
-                base_speed = 200;
-                break;
-              }
+              // if (!(wormRateChecked)) {
+              //   CalcWormRate();
+              //   if (direction == 0)
+              //     break;
+              // } else if (millis() / 1000000. - initWormTime < wormTime) {
+              //   direction = 0;
+              //   base_speed = 200;
+              //   break;
+              // }
               GrabBlock();
             }
           }
@@ -222,6 +225,7 @@ void loop() {
 
       // if the robot is moving backwards
       case 0:
+        Turn();
         // move the robot backwards
         mdWheels.setSpeeds(base_speed, -base_speed);
         // look for the line
@@ -307,7 +311,8 @@ void CheckIntersection(void) {
     // if the sensor average is greater than 1000
     if (avg > 1000) {
       // stop the robot
-      mdWheels.setSpeeds(0, 0);
+      mdWheels.setSpeeds(-base_speed, base_speed);
+      delay(750);
       // reset speed to original
       base_speed = 75;
       // reset the current intersection
@@ -416,6 +421,9 @@ void Turn(void) {
     case (-1):
       // resets the worm rate checked flag
       wormRateChecked = false;
+      mdWheels.setSpeeds(base_speed, -base_speed);
+      delay(100);
+      mdWheels.setSpeeds(0, 0);
 
       angle = M_PI / 1.2;
       break;
@@ -425,11 +433,11 @@ void Turn(void) {
       mdWheels.setSpeeds(-75, 75);
       delay(500);
       mdWheels.setSpeeds(0, 0);
-      angle = M_PI / 4.;
+      angle = -M_PI / 4.;
       break;
     // first intersection
     case (1):
-      angle = M_PI / 5.3;
+      angle = M_PI / 10.;
       break;
     // second intersection
     case (2):
@@ -437,11 +445,11 @@ void Turn(void) {
       break;
     // third intersection
     case (3):
-      angle = M_PI / 12.;
+      angle = M_PI / 10.;
       break;
     // Fourth intersection
     case (4):
-      angle = M_PI / 12.;
+      angle = M_PI / 10.;
       break;
   };
 
@@ -592,7 +600,7 @@ void GrabBlock(void) {
 
   // send arm forward
   mdRP.setM1Speed(rpMotorSpeed);
-  //Serial.println(rpMotorSpeed);
+
   MoveArmForward();
 
   // stop the rp motor
@@ -609,16 +617,22 @@ void GrabBlock(void) {
 
 void CheckBlock(void) {
 
-  if (abs(analogRead(hallSensor)) < 600 && abs(analogRead(hallSensor)) > 500) {
-    Serial.println("Magnet Block");
-    // PushBlock();
-    // return;
-  }
-  if (CheckColor() == 2)
-    Serial.println("Yellow Block");
-  // PushBlock();
-  else
+  int result = CheckColor();
+
+  if (abs(analogRead(hallSensor)) < 500 && abs(analogRead(hallSensor)) > 510 || result == 2) {
+    Serial.println("Bad Block");
+    PushBlock();
+    return;
+  } else if (result == -1) {
+    activeIntersection += 1;
+    direction = 0;
+    currIntersection = -1;
+  } else
     PullBlock();
+  if (blockCount == 2) {
+    direction = 0;
+    currIntersection = -1;
+  }
 }
 
 int CheckColor(void) {
@@ -716,7 +730,7 @@ int DetermineColor(float r, float g, float b) {
 void PushBlock(void) {
 
   // raise arm
-  armServo.write(180);
+  armServo.write(0);
 
   mdRP.setM1Speed(-rpMotorSpeed);
 
@@ -727,11 +741,11 @@ void PushBlock(void) {
   mdRP.setM1Speed(0);
 
   // drop arm
-  armServo.write(50);
+  armServo.write(150);
 
   mdRP.setM1Speed(rpMotorSpeed);
 
-  delay(1000);
+  MoveArmForward();
 
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
@@ -750,6 +764,8 @@ void PullBlock(void) {
 
   // raise arm
   armServo.write(180);
+
+  blockCount += 1;
 }
 
 void DispenseBlock(void) {
@@ -774,18 +790,20 @@ void DispenseBlock(void) {
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
 
-  // mdWheels.setSpeeds(base_speed, -base_speed);
+  mdWheels.setSpeeds(base_speed, -base_speed);
 
-  // mdWheels.setSpeeds(0, 0);
+  delay(2000);
+
+  mdWheels.setSpeeds(0, 0);
 
   currIntersection = -1;
 
-  // Turn();
+  Turn();
 
   base_speed = 75;
   safeZone = true;
   currIntersection = 1;
-  activeIntersection += 1;
+  // activeIntersection += 1;
   goingToRefinery = false;
   atRefinery = false;
 }
