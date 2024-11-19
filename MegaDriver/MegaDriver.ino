@@ -134,9 +134,11 @@ bool onIntersection = false;
 
 // Robot variables
 // Nominal speed of robot
-double base_speed = 75;
+double base_speed = 125;
 // RP motore speed
 int rpMotorSpeed = 400;
+// Tracks if robot has completed its turn
+bool turned = false;
 
 void setup() {
   // Computer Baud Rate
@@ -225,9 +227,15 @@ void loop() {
 
       // if the robot is moving backwards
       case 0:
-        Turn();
         // move the robot backwards
-        mdWheels.setSpeeds(base_speed, -base_speed);
+        if (!(turned)) {
+          mdWheels.setSpeeds(base_speed, -base_speed);
+          delay(2000);
+          Turn();
+        } else
+          mdWheels.setSpeeds(-base_speed, base_speed);
+
+        turned = true;
         // look for the line
         CheckIntersection();
         break;
@@ -267,7 +275,10 @@ void LineFollow(void) {
   d = num / denom;
 
   // error between the location of the center line and center robot
-  error = 2 - d;
+  if (goingToRefinery)
+    error = d - 2;
+  else
+    error = 2 - d;
 
   // motor adjustments based on the error
   m1c = base_speed + kpLineSensor * error;
@@ -310,9 +321,6 @@ void CheckIntersection(void) {
 
     // if the sensor average is greater than 1000
     if (avg > 1000) {
-      // stop the robot
-      mdWheels.setSpeeds(-base_speed, base_speed);
-      delay(750);
       // reset speed to original
       base_speed = 75;
       // reset the current intersection
@@ -421,11 +429,11 @@ void Turn(void) {
     case (-1):
       // resets the worm rate checked flag
       wormRateChecked = false;
-      mdWheels.setSpeeds(base_speed, -base_speed);
-      delay(100);
-      mdWheels.setSpeeds(0, 0);
+      if (safeZone)
+        angle = 1.1* M_PI;
+      else
+        angle = M_PI;
 
-      angle = M_PI / 1.2;
       break;
     // robot is driving backwards from danger zone
     case (0):
@@ -433,7 +441,7 @@ void Turn(void) {
       mdWheels.setSpeeds(-75, 75);
       delay(500);
       mdWheels.setSpeeds(0, 0);
-      angle = -M_PI / 4.;
+      angle = -6 * M_PI / 4.;
       break;
     // first intersection
     case (1):
@@ -441,7 +449,7 @@ void Turn(void) {
       break;
     // second intersection
     case (2):
-      angle = M_PI / 10.;
+      angle = M_PI / 4;
       break;
     // third intersection
     case (3):
@@ -542,7 +550,7 @@ void CheckWall(void) {
     return;
 
   // if the reading is greater than 180, stop
-  if (analogRead(distSensor) > 180 && approach) {
+  if (analogRead(distSensor) > 170 && approach) {
 
     // if the robot is going to the refinery,
     // set at reinery to true
@@ -596,43 +604,44 @@ void CalcWormRate(void) {
 
 void GrabBlock(void) {
 
-  armServo.write(0);
+  // armServo.write(0);
 
-  // send arm forward
-  mdRP.setM1Speed(rpMotorSpeed);
+  // // send arm forward
+  // mdRP.setM1Speed(rpMotorSpeed);
 
-  MoveArmForward();
+  // MoveArmForward();
 
-  // stop the rp motor
-  mdRP.setM1Brake(rpMotorSpeed);
-  mdRP.setM1Speed(0);
+  // // stop the rp motor
+  // mdRP.setM1Brake(rpMotorSpeed);
+  // mdRP.setM1Speed(0);
 
-  // drop arm
-  armServo.write(170);
+  // // drop arm
+  // armServo.write(170);
 
-  delay(1000);
+  // delay(1000);
 
   CheckBlock();
 }
 
 void CheckBlock(void) {
 
-  int result = CheckColor();
+  // int result = CheckColor();
 
-  if (abs(analogRead(hallSensor)) < 500 && abs(analogRead(hallSensor)) > 510 || result == 2) {
-    Serial.println("Bad Block");
-    PushBlock();
-    return;
-  } else if (result == -1) {
-    activeIntersection += 1;
-    direction = 0;
-    currIntersection = -1;
-  } else
-    PullBlock();
-  if (blockCount == 2) {
-    direction = 0;
-    currIntersection = -1;
-  }
+  // if (abs(analogRead(hallSensor)) < 500 && abs(analogRead(hallSensor)) > 510 || result == 2) {
+  //   Serial.println("Bad Block");
+  //   PushBlock();
+  //   return;
+  // } else if (result == -1) {
+  //   activeIntersection += 1;
+  //   direction = 0;
+  //   currentIntersection = -1;
+  // } else
+  //   PullBlock();
+  // if (blockCount == 2) {
+  direction = 0;
+  currIntersection = -1;
+  turned = false;
+  // }
 }
 
 int CheckColor(void) {
@@ -792,7 +801,7 @@ void DispenseBlock(void) {
 
   mdWheels.setSpeeds(base_speed, -base_speed);
 
-  delay(2000);
+  delay(4000);
 
   mdWheels.setSpeeds(0, 0);
 
