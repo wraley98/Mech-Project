@@ -78,7 +78,7 @@ float RF, GF, BF, CF;                                              // filtered d
 // color ranges {R , G , B}
 float blockRanges[3][3][2] = { { { 0.05, 0.25 }, { 0.15, 0.35 }, { 0.5, 0.7 } },
                                { { 0.55, 0.75 }, { 0.1, 0.4 }, { 0.15, 0.45 } },
-                               { { 0.38, 0.62 }, { 0.33, 0.57 }, { 0.08, 0.39 } } };
+                               { { 0.3, 0.69 }, { 0.41, 0.7 }, { 0.05, 0.41 } } };
 
 String clrArr[3] = { "Blue", "Red", "Yellow" };
 
@@ -96,7 +96,7 @@ bool atWall = false;
 //// Program Driven Variables ////
 
 // determines whether the drive loop is active
-String active = "1";
+String active = "0";
 // determines whether the drive function is on its first loop
 bool firstLoop = true;
 // determines the direction the robot is driving ( 1 forward / 0 backward)
@@ -183,8 +183,12 @@ void setup() {
 
 void loop() {
 
+  if (Serial2.available() > 0) {
+    active = Serial2.readString();
+  }
+
   // If activation signal is sent from uno, startDriving
-  if (active.equals("1")) {
+  if (active.equals("1 ")) {
 
     // direction (1 = forward // 0 = backward)
     switch (direction) {
@@ -237,7 +241,7 @@ void loop() {
           Turn();
           base_speed = 75;
         } else
-          mdWheels.setSpeeds(-base_speed, base_speed);
+          mdWheels.setSpeeds(-100, 100);
 
         turned = true;
         // look for the line
@@ -445,11 +449,9 @@ void Turn(void) {
     case (-1):
       // resets the worm rate checked flag
       wormRateChecked = false;
-      if (safeZone){
+      if (safeZone) {
         angle = 1.1 * M_PI;
-        Reset();
-      }
-      else
+      } else
         angle = M_PI;
 
       break;
@@ -458,7 +460,7 @@ void Turn(void) {
       mdWheels.setSpeeds(-75, 75);
       // delay(500);
       mdWheels.setSpeeds(0, 0);
-      angle = -7.25 * M_PI / 4.;
+      angle = -6.9 * M_PI / 4.;
       break;
     // first intefrsection
     case (1):
@@ -567,7 +569,7 @@ void CheckWall(void) {
     return;
 
   // if the reading is greater than 180, stop
-  if (analogRead(distSensor) > 170 && approach) {
+  if (analogRead(distSensor) > 180 && approach) {
 
     // if the robot is going to the refinery,
     // set at reinery to true
@@ -584,7 +586,7 @@ void CheckWall(void) {
     approach = false;
 
     // grab the block
-    GrabBlock();
+    // GrabBlock();
   } else if (analogRead(distSensor) < 85) {
     approach = true;
   }
@@ -633,7 +635,7 @@ void GrabBlock(void) {
   mdRP.setM1Speed(0);
 
   // drop arm
-  armServo.write(180);
+  armServo.write(175);
 
   delay(2000);
 
@@ -645,7 +647,6 @@ void CheckBlock(void) {
   int result = CheckColor();
 
   if (abs(analogRead(hallSensor)) > 570 || abs(analogRead(hallSensor)) < 490 || result == 2) {
-    Serial.println("Bad Block");
     PushBlock();
     return;
   } else if (result == -1) {
@@ -768,7 +769,7 @@ void PushBlock(void) {
   mdRP.setM1Speed(0);
 
   // drop arm
-  armServo.write(180);
+  armServo.write(175);
 
   mdRP.setM1Speed(rpMotorSpeed);
 
@@ -833,6 +834,8 @@ void DispenseBlock(void) {
 
   mdWheels.setSpeeds(0, 0);
 
+
+  Reset();
   // base_speed = 75;
   // safeZone = true;
   // currIntersection = 1;
@@ -849,8 +852,6 @@ void MoveArmForward(void) {
   while (frontSwitchVal != 0) {
     frontSwitchVal = digitalRead(frontSwitchPin);
   }
-  // mdRP.setM1Brake(rpMotorSpeed);
-  // mdRP.setM1Speed(0);
 }
 
 void MoveArmBackward(void) {
