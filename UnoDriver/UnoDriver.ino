@@ -17,9 +17,15 @@ void loop() {
     if (input.equals("1")) {
       megaSerial.write("1");
       Serial.println("Drive started");
-    } else if (input.equals("0")) {
-      megaSerial.write("0");
-      Serial.println("Drive ended");
+    } else if (input.equals("2")) {
+      megaSerial.write("2");
+       Serial.println("Drive started");
+    }else if (input.equals("3")) {
+      megaSerial.write("3");
+       Serial.println("Drive started");
+    }else if (input.equals("4")) {
+      megaSerial.write("4");
+       Serial.println("Drive started");
     } else {
       Serial.println("Not a valid input, please type:\n1 to drive or 0 to stop\n");
     }

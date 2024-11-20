@@ -96,7 +96,7 @@ bool atWall = false;
 //// Program Driven Variables ////
 
 // determines whether the drive loop is active
-String active = "0";
+bool active = false;
 // determines whether the drive function is on its first loop
 bool firstLoop = true;
 // determines the direction the robot is driving ( 1 forward / 0 backward)
@@ -129,7 +129,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 3;
+int activeIntersection = 1;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -184,11 +184,15 @@ void setup() {
 void loop() {
 
   if (Serial2.available() > 0) {
-    active = Serial2.readString();
+    String message = Serial2.readString();
+
+    activeIntersection = message.toInt();
+
+    active = true;
   }
 
   // If activation signal is sent from uno, startDriving
-  if (active.equals("1 ")) {
+  if (active) {
 
     // direction (1 = forward // 0 = backward)
     switch (direction) {
@@ -445,7 +449,7 @@ void Turn(void) {
   // determines the angle to turn by based
   // on the current intersection the bot is on
   switch (currIntersection) {
-    // robot is leaving the refinery
+    // robot is leaving the wall
     case (-1):
       // resets the worm rate checked flag
       wormRateChecked = false;
@@ -569,7 +573,7 @@ void CheckWall(void) {
     return;
 
   // if the reading is greater than 180, stop
-  if (analogRead(distSensor) > 180 && approach) {
+  if (analogRead(distSensor) > 185 && approach) {
 
     // if the robot is going to the refinery,
     // set at reinery to true
@@ -806,6 +810,16 @@ void DispenseBlock(void) {
 
   MoveArmForward();
 
+  mdRP.setM1Speed(-rpMotorSpeed);
+
+  MoveArmBackward();
+
+  armServo.write(160);
+
+  mdRP.setM1Speed(rpMotorSpeed);
+
+  delay(2000);
+
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
@@ -813,6 +827,8 @@ void DispenseBlock(void) {
   mdRP.setM1Speed(-rpMotorSpeed);
 
   delay(1200);
+
+  armServo.write(0);
 
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
@@ -833,7 +849,6 @@ void DispenseBlock(void) {
   delay(1000);
 
   mdWheels.setSpeeds(0, 0);
-
 
   Reset();
   // base_speed = 75;
