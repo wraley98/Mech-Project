@@ -58,9 +58,12 @@ Encoder myEnc2(20, 21);
 // Line Sensor Setup //
 const uint8_t SensorCount = 8;       // # of sensors in reflectance array
 uint16_t sensorValues[SensorCount];  //reflectance sensor readings
-double kpLineSensor = 60;            //Proportional Gain for Line Following
-int m1c = 0, m2c = 0;                //declare and initialize motor commands
-int16_t Sensor_value_unbiased[8];    // unbiased sensor readings
+double kpLineSensor = 64;            //Proportional Gain for Line Following
+double kdLineSensor = 2.0;           //Derivative Gain for line following
+double prevLineError = 0;            //Previous error from line sensor
+double tLineOld = 0;
+int m1c = 0, m2c = 0;              //declare and initialize motor commands
+int16_t Sensor_value_unbiased[8];  // unbiased sensor readings
 
 /// !!!! Run TestLineSensor and adjust values on new surface!!!!
 int16_t sensor_bias[8] = { 100, 152, 208, 100, 100, 152, 152, 152 };  // sensor biases
@@ -75,7 +78,7 @@ float RF, GF, BF, CF;                                              // filtered d
 // color ranges {R , G , B}
 float blockRanges[3][3][2] = { { { 0.05, 0.25 }, { 0.15, 0.35 }, { 0.5, 0.7 } },
                                { { 0.55, 0.75 }, { 0.1, 0.4 }, { 0.15, 0.45 } },
-                               { { 0.4, 0.5 }, { 0.35, 0.55 }, { 0.15, 0.35 } } };
+                               { { 0.38, 0.62 }, { 0.33, 0.57 }, { 0.08, 0.39 } } };
 
 String clrArr[3] = { "Blue", "Red", "Yellow" };
 
@@ -126,7 +129,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 2;
+int activeIntersection = 3;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -134,7 +137,7 @@ bool onIntersection = false;
 
 // Robot variables
 // Nominal speed of robot
-double base_speed = 125;
+double base_speed = 75;
 // RP motore speed
 int rpMotorSpeed = 400;
 // Tracks if robot has completed its turn
@@ -232,6 +235,7 @@ void loop() {
           mdWheels.setSpeeds(base_speed, -base_speed);
           delay(2000);
           Turn();
+          base_speed = 75;
         } else
           mdWheels.setSpeeds(-base_speed, base_speed);
 
@@ -257,6 +261,9 @@ void LineFollow(void) {
   double num = 0;    // numinator for calculating distance from line
   double d = 0;      // distance from center of line
   double error = 0;  // error between center of bot and center of line
+  double derError = 0;
+  unsigned long t = millis();
+  double deltaT = t - tLineOld;
 
   // retrieve unbiased sensor values
   GetUnbiased();
@@ -275,17 +282,24 @@ void LineFollow(void) {
   d = num / denom;
 
   // error between the location of the center line and center robot
-  if (goingToRefinery)
+  if (goingToRefinery) {
     error = d - 2;
-  else
+    // derError = (-prevLineError + error)/deltaT;
+    // prevLineError = error;
+  } else {
     error = 2 - d;
-
+    // derError = (-prevLineError + error)/deltaT;
+    // prevLineError = error;
+  }
   // motor adjustments based on the error
+  // m1c = base_speed + kpLineSensor * error + kdLineSensor * derError;
+  // m2c = base_speed - kpLineSensor * error - kdLineSensor * derError;
   m1c = base_speed + kpLineSensor * error;
   m2c = base_speed - kpLineSensor * error;
 
   // send motor commands
   mdWheels.setSpeeds(-m1c, m2c);
+  double tOld = t;
 }
 /*
 CheckIntersection
@@ -325,6 +339,8 @@ void CheckIntersection(void) {
       base_speed = 75;
       // reset the current intersection
       currIntersection = 0;
+
+      delay(250);
       // turn the robot
       Turn();
       // set the robot going forward
@@ -396,7 +412,7 @@ void Turn(void) {
   double Kp_straight = 0.3;  // Gain for straight-line correction
 
   // Encoder and motor variables
-  long counts1, counts2;
+  long counts1 = 0, counts2 = 0;
   int m1c = 0, m2c = 0;  // Motor commands
 
   // Physical parameters
@@ -429,27 +445,28 @@ void Turn(void) {
     case (-1):
       // resets the worm rate checked flag
       wormRateChecked = false;
-      if (safeZone)
-        angle = 1.1* M_PI;
+      if (safeZone){
+        angle = 1.1 * M_PI;
+        Reset();
+      }
       else
         angle = M_PI;
 
       break;
     // robot is driving backwards from danger zone
     case (0):
-      // continue driving backwards for 0.3 seconds
       mdWheels.setSpeeds(-75, 75);
-      delay(500);
+      // delay(500);
       mdWheels.setSpeeds(0, 0);
-      angle = -6 * M_PI / 4.;
+      angle = -7.25 * M_PI / 4.;
       break;
-    // first intersection
+    // first intefrsection
     case (1):
       angle = M_PI / 10.;
       break;
     // second intersection
     case (2):
-      angle = M_PI / 4;
+      angle = M_PI / 10;
       break;
     // third intersection
     case (3):
@@ -604,44 +621,45 @@ void CalcWormRate(void) {
 
 void GrabBlock(void) {
 
-  // armServo.write(0);
+  armServo.write(0);
 
-  // // send arm forward
-  // mdRP.setM1Speed(rpMotorSpeed);
+  // send arm forward
+  mdRP.setM1Speed(rpMotorSpeed);
 
-  // MoveArmForward();
+  MoveArmForward();
 
-  // // stop the rp motor
-  // mdRP.setM1Brake(rpMotorSpeed);
-  // mdRP.setM1Speed(0);
+  // stop the rp motor
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
 
-  // // drop arm
-  // armServo.write(170);
+  // drop arm
+  armServo.write(180);
 
-  // delay(1000);
+  delay(2000);
 
   CheckBlock();
 }
 
 void CheckBlock(void) {
 
-  // int result = CheckColor();
+  int result = CheckColor();
 
-  // if (abs(analogRead(hallSensor)) < 500 && abs(analogRead(hallSensor)) > 510 || result == 2) {
-  //   Serial.println("Bad Block");
-  //   PushBlock();
-  //   return;
-  // } else if (result == -1) {
-  //   activeIntersection += 1;
-  //   direction = 0;
-  //   currentIntersection = -1;
-  // } else
-  //   PullBlock();
-  // if (blockCount == 2) {
-  direction = 0;
-  currIntersection = -1;
-  turned = false;
-  // }
+  if (abs(analogRead(hallSensor)) > 570 || abs(analogRead(hallSensor)) < 490 || result == 2) {
+    Serial.println("Bad Block");
+    PushBlock();
+    return;
+  } else if (result == -1) {
+    activeIntersection += 1;
+    direction = 0;
+    currIntersection = -1;
+    turned = false;
+  } else
+    PullBlock();
+  if (blockCount == 2) {
+    direction = 0;
+    currIntersection = -1;
+    turned = false;
+  }
 }
 
 int CheckColor(void) {
@@ -743,14 +761,14 @@ void PushBlock(void) {
 
   mdRP.setM1Speed(-rpMotorSpeed);
 
-  delay(1000);
+  delay(2500);
 
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
 
   // drop arm
-  armServo.write(150);
+  armServo.write(180);
 
   mdRP.setM1Speed(rpMotorSpeed);
 
@@ -809,12 +827,19 @@ void DispenseBlock(void) {
 
   Turn();
 
-  base_speed = 75;
-  safeZone = true;
-  currIntersection = 1;
-  // activeIntersection += 1;
-  goingToRefinery = false;
-  atRefinery = false;
+  mdWheels.setSpeeds(base_speed, -base_speed);
+
+  delay(1000);
+
+  mdWheels.setSpeeds(0, 0);
+
+  // base_speed = 75;
+  // safeZone = true;
+  // currIntersection = 1;
+  // // activeIntersection += 1;
+  // goingToRefinery = false;
+  // atRefinery = false;
+  // direction = 1;
 }
 
 void MoveArmForward(void) {
@@ -835,4 +860,58 @@ void MoveArmBackward(void) {
   // read pin until pressed
   while (backSwitchVal != 0)
     backSwitchVal = digitalRead(backSwitchPin);
+}
+
+void Reset(void) {
+  // Distance Sensor
+  approach = false;
+  atWall = false;
+
+  //// Program Driven Variables ////
+
+  // determines whether the drive loop is active
+  active = "1";
+  // determines whether the drive function is on its first loop
+  firstLoop = true;
+  // determines the direction the robot is driving ( 1 forward / 0 backward)
+  direction = 1;
+  // determines if robot is in safe or danger zone
+  safeZone = true;
+  // Counts how many blocks have been picked up
+  blockCount = 0;
+
+  // Worm Variables
+
+  // determines how long the robot has until the worm arrives
+  wormTime = 0;
+  // maximum acceptable freq of the worm
+  maxWormFreq = 340;
+  // determines if the worm rate has been checked
+  wormRateChecked = false;
+  // initial time that the worm time is based on
+  initWormTime;
+
+  // Refinery Varibables
+
+  // determines if robot is at the refinery
+  atRefinery = false;
+  // determines if the robot is going to the refinery
+  goingToRefinery = false;
+
+  // Intersection variables
+
+  // Determines if intersection has been reached
+  intersetionReached = false;
+  // Defines what intersection the robot is currently at
+  currIntersection = 1;
+  // Checks whether line sensor is on intersection
+  onIntersection = false;
+
+  // Robot variables
+  // Nominal speed of robot
+  base_speed = 75;
+  // RP motore speed
+  rpMotorSpeed = 400;
+  // Tracks if robot has completed its turn
+  turned = false;
 }
