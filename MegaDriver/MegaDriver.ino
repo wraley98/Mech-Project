@@ -49,6 +49,10 @@ PWMServo armServo;
 // Line Sensor driver
 QTRSensors qtr;
 
+// Encoder drivers
+Encoder myEnc1(18, 19);
+Encoder myEnc2(20, 21);
+
 //// Sensor Setup ////
 
 // Line Sensor Setup //
@@ -133,12 +137,11 @@ bool onIntersection = false;
 
 // Robot variables
 // Nominal speed of robot
-double base_speed = 200;
+double base_speed = 100;
 // RP motore speed
 int rpMotorSpeed = 400;
 // Tracks if robot has completed its turn
 bool turned = false;
-double t0WallDetect;
 
 void setup() {
   // Computer Baud Rate
@@ -217,6 +220,7 @@ void loop() {
               //   break;
               // }
               GrabBlock();
+              break;
             }
           }
         } else {
@@ -240,7 +244,7 @@ void loop() {
           mdWheels.setSpeeds(base_speed, -base_speed);
           delay(2000);
           Turn();
-          base_speed = 75;
+          base_speed = 200;
         } else
           mdWheels.setSpeeds(-100, 100);
 
@@ -345,7 +349,7 @@ void CheckIntersection(void) {
       // reset the current intersection
       currIntersection = 0;
 
-      // delay(250);
+      delay(250);
       // turn the robot
       Turn();
       // set the robot going forward
@@ -355,29 +359,31 @@ void CheckIntersection(void) {
     }
   } else {
     // if the sensor average is greater than 1200
-    if (avg > 1200) {
+    if (avg > 1000) {
       // if the robot is not on the intersection with blocks
       if (currIntersection != activeIntersection) {
-
-        if (currIntersection == 1) {
-          FirstTurn();
-          // delay(500);
-        }
-
         // if the robot is currently on an intersection, return
         if (onIntersection) {
           return;
         }
         // set onIntersection to true and return
         else {
+          if (currIntersection == 1) {
+            Turn();
+            mdWheels.setSpeeds(-200, 200);
+            delay(500);
+            currIntersection += 1;
+            safeZone = true;
+            base_speed = 200;
+            return;
+          }
+          base_speed = 200;
           onIntersection = true;
           return;
         }
       } else {
         // turn the robot
-        delay(250);
         Turn();
-        delay(750);
       }
     } else {
       // if the robot is on an intersection, increment the intersection
@@ -413,9 +419,6 @@ Turns the robot based on what intersection the
 robot is currently on. 
 */
 void Turn(void) {
-
-  Encoder myEnc1(18, 19);
-  Encoder myEnc2(20, 21);
 
   // stops bot
   mdWheels.setSpeeds(0, 0);
@@ -454,6 +457,8 @@ void Turn(void) {
 
   float angle;  // initializes the angle that robot is turning to
 
+  int turnDir = 1;
+
   // determines the angle to turn by based
   // on the current intersection the bot is on
   switch (currIntersection) {
@@ -476,11 +481,18 @@ void Turn(void) {
       break;
     // first intefrsection
     case (1):
-      angle = M_PI / 10.;
+      if (currIntersection != activeIntersection) {
+        angle = M_PI / 14;
+        turnDir = -1;
+        break;
+      }
+      angle = M_PI / 1.5;
       break;
     // second intersection
     case (2):
-      angle = M_PI / 2.5;
+      mdWheels.setSpeeds(-150, 150);
+      delay(250);
+      angle = M_PI / 2;
       break;
     // third intersection
     case (3):
@@ -493,12 +505,12 @@ void Turn(void) {
   };
 
   // initializes the final angle
-  theta1_final = angle * (D / 2) / rw;
-  theta2_final = -angle * (D / 2) / rw;
+  theta1_final = turnDir * angle * (D / 2) / rw;
+  theta2_final = turnDir * -angle * (D / 2) / rw;
 
   // Set the desired velocity in radians/s
-  omega1_des = 2;
-  omega2_des = -omega1_des;
+  omega1_des = turnDir * 2;
+  omega2_des = turnDir * -omega1_des;
 
   // reset the encoders
   myEnc1.write(0);
@@ -506,12 +518,13 @@ void Turn(void) {
 
   // infinite loop
   while (true) {
+
     t = micros() / 1000000. - t0;  // Current time in seconds since start
     deltaT = t - t_old;            // Sample time
 
     // Read encoder counts and calculate wheel positions and velocities
-    counts1 = myEnc1.read();
-    counts2 = -myEnc2.read();
+    counts1 = turnDir * myEnc1.read();
+    counts2 = turnDir * -myEnc2.read();
 
 
     // update the angle of the wheels
@@ -535,13 +548,8 @@ void Turn(void) {
     V1m += correction;
     V2m -= correction;
 
-
     // if either angles are greater than the final angle, stop
     if (abs(theta1) >= abs(theta1_final) || abs(theta2) >= abs(theta2_final)) {
-
-      myEnc1.readAndReset();
-      myEnc2.readAndReset();
-      mdWheels.setSpeeds(0, 0);
       break;
     }
 
@@ -552,8 +560,7 @@ void Turn(void) {
     m2c = 400 * V2m / 12;
 
     // Set motor speeds
-
-    mdWheels.setSpeeds(-abs(m1c), -abs(m2c));
+    mdWheels.setSpeeds(turnDir * -abs(m1c), turnDir * -abs(m2c));
 
     // Update previous values
     t_old = t;
@@ -563,11 +570,11 @@ void Turn(void) {
 
   // if the robot is not driving backwards or leaving the refinery,
   // the bot is in the danger zone
-  // if (currIntersection != 0 || currIntersection != -1)
-  safeZone = false;
-  // // else, the bot is in the safe zone
-  // else
-  //   safeZone = true;
+  if (currIntersection != 0 || currIntersection != -1)
+    safeZone = false;
+  // else, the bot is in the safe zone
+  else
+    safeZone = true;
 
   return;
 }
@@ -581,16 +588,20 @@ Determines if the robot is close to a wall.
 */
 void CheckWall(void) {
 
+  // if the distance sensor reading is too high, ignore the reading
+  if (analogRead(distSensor) > 200)
+    return;
+
   // if the reading is greater than 180, stop
-  if (analogRead(distSensor) > 150 && approach) {
+  if (analogRead(distSensor) > 185 && approach) {
 
     // if the robot is going to the refinery,
     // set at reinery to true
-    // if (goingToRefinery) {
-    //   mdWheels.setSpeeds(0, 0);
-    //   atRefinery = true;
-    //   return;
-    // }
+    if (goingToRefinery) {
+      mdWheels.setSpeeds(0, 0);
+      atRefinery = true;
+      return;
+    }
 
     // stop the robot
     mdWheels.setSpeeds(0, 0);
@@ -600,7 +611,7 @@ void CheckWall(void) {
 
     // grab the block
     // GrabBlock();
-  } else if (analogRead(distSensor) < 75) {
+  } else if (analogRead(distSensor) < 85) {
     approach = true;
   }
 }
@@ -648,7 +659,7 @@ void GrabBlock(void) {
   mdRP.setM1Speed(0);
 
   // drop arm
-  armServo.write(160);
+  armServo.write(175);
 
   delay(2000);
 
@@ -659,7 +670,7 @@ void CheckBlock(void) {
 
   int result = CheckColor();
 
-  if (abs(analogRead(hallSensor)) > 570 || abs(analogRead(hallSensor)) < 490 || result == 2) {
+  if (abs(analogRead(hallSensor)) > 330 || abs(analogRead(hallSensor)) < 315 || result == 2) {
     PushBlock();
     return;
   } else if (result == -1) {
@@ -667,6 +678,7 @@ void CheckBlock(void) {
     direction = 0;
     currIntersection = -1;
     turned = false;
+    MoveArmBackward();
   } else
     PullBlock();
   if (blockCount == 2) {
@@ -696,13 +708,7 @@ int CheckColor(void) {
   float gAvg = MovingAverage(gNorm);
   float bAvg = MovingAverage(bNorm);
 
-  if (gAvg > .45 && gAvg < .55)
-    return 2;
-  else if (gAvg == .35 || gAvg == .34) {
-    if (bAvg == .35 || bAvg == .34)
-      return -1;
-  } else
-    return 1;
+  int clr = DetermineColor(rAvg, gAvg, bAvg);
 }
 
 float readPulse() {
@@ -810,7 +816,7 @@ void PullBlock(void) {
   mdRP.setM1Speed(0);
 
   // raise arm
-  armServo.write(180);
+  armServo.write(160);
 
   blockCount += 1;
 }
@@ -861,152 +867,42 @@ void DispenseBlock(void) {
 
   mdWheels.setSpeeds(base_speed, -base_speed);
 
-  delay(1000);
+  delay(2000);
 
   mdWheels.setSpeeds(0, 0);
 
   Reset();
-  // base_speed = 75;
-  // safeZone = true;
-  // currIntersection = 1;
-  // // activeIntersection += 1;
-  // goingToRefinery = false;
-  // atRefinery = false;
-  // direction = 1;
+
+  base_speed = 100;
 }
 
 void MoveArmForward(void) {
   // initial read on pin
   int frontSwitchVal = digitalRead(frontSwitchPin);
+
+  mdRP.setM1Speed(-rpMotorSpeed);
+
   // read pin until pressed
   while (frontSwitchVal != 0) {
     frontSwitchVal = digitalRead(frontSwitchPin);
   }
+
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
 }
 
 void MoveArmBackward(void) {
   // initial read on pin
   int backSwitchVal = digitalRead(backSwitchPin);
 
+  mdRP.setM1Speed(-rpMotorSpeed);
+
   // read pin until pressed
   while (backSwitchVal != 0)
     backSwitchVal = digitalRead(backSwitchPin);
-}
 
-void FirstTurn(void) {
-
-  double angle = -M_PI / 14;
-
-  Encoder myEnc1(18, 19);
-  Encoder myEnc2(20, 21);
-
-  // stops bot
-  mdWheels.setSpeeds(0, 0);
-
-  // Time variables
-  double t, t_old, deltaT, print_time, t0 = 0;
-
-  // Control parameters
-  double Kp = 0.6;           // Proportional Gain for Trajectory Following
-  double Kp_straight = 0.3;  // Gain for straight-line correction
-
-  // Encoder and motor variables
-  long counts1 = 0, counts2 = 0;
-  int m1c = 0, m2c = 0;  // Motor commands
-
-  // Physical parameters
-  double GearRatio = 70;
-  int countsPerRev = 64;
-  double rw = 5;    // Wheel radius in cm
-  double D = 25.4;  // Distance between wheels in cm
-
-  // Desired and actual state variables
-  double theta1 = 0, theta1_old = 0, omega1 = 0;
-  double theta2 = 0, theta2_old = 0, omega2 = 0;
-  double theta1_des = 0, theta2_des = 0;
-  double theta1_final, theta2_final;
-  double omega1_des, omega2_des;
-
-  // Motor voltage commands
-  double V1m, V2m;
-
-  // Set the time values
-  t_old = micros() / 1000000.;
-  t0 = micros() / 1000000.;
-
-  // initializes the final angle
-  theta1_final = angle * (D / 2) / rw;
-  theta2_final = -angle * (D / 2) / rw;
-
-  int turnDir = 1;
-
-  if (angle < 0)
-    turnDir = -1;
-
-  // Set the desired velocity in radians/s
-  omega1_des = 5 * turnDir;
-  omega2_des = -omega1_des;
-
-  // reset the encoders
-  myEnc1.write(0);
-  myEnc2.write(0);
-
-  // infinite loop
-  while (true) {
-
-    t = micros() / 1000000. - t0;  // Current time in seconds since start
-    deltaT = t - t_old;            // Sample time
-
-    // Read encoder counts and calculate wheel positions and velocities
-    counts1 = myEnc1.read() * turnDir;
-    counts2 = -myEnc2.read() * turnDir;
-
-
-    // update the angle of the wheels
-    theta1 = -counts1 * 360 / (countsPerRev * GearRatio) * (M_PI / 180);
-    theta2 = -counts2 * 360 / (countsPerRev * GearRatio) * (M_PI / 180);
-
-    // set the angular speed
-    omega1 = (theta1 - theta1_old) / deltaT;
-    omega2 = (theta2 - theta2_old) / deltaT;
-
-    // Update desired positions based on desired velocity and sample time
-    theta1_des += omega1_des * deltaT;
-    theta2_des += omega2_des * deltaT;
-
-    // Compute the control signal (proportional control)
-    V1m = Kp * (theta1_des - theta1);
-    V2m = Kp * (theta2_des - theta2);
-
-    // Add a correction term for straight-line motion based on wheel position error
-    double correction = Kp_straight * (theta1 - theta2);
-    V1m += correction;
-    V2m -= correction;
-
-
-    // if either angles are greater than the final angle, stop
-    if (abs(theta1) >= abs(theta1_final) || abs(theta2) >= abs(theta2_final)) {
-      myEnc1.readAndReset();
-      myEnc2.readAndReset();
-      mdWheels.setSpeeds(0, 0);
-      break;
-    }
-
-    // Constrain motor commands within safe range
-    V1m = constrain(V1m, -12, 12);
-    V2m = constrain(V2m, -12, 12);
-    m1c = 400 * V1m / 12;
-    m2c = 400 * V2m / 12;
-
-    // Set motor speeds
-
-    mdWheels.setSpeeds(-abs(m1c) * turnDir, -abs(m2c) * turnDir);
-
-    // Update previous values
-    t_old = t;
-    theta1_old = theta1;
-    theta2_old = theta2;
-  }
+  mdRP.setM1Brake(rpMotorSpeed);
+  mdRP.setM1Speed(0);
 }
 
 void Reset(void) {
