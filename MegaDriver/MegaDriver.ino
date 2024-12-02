@@ -129,7 +129,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 2;
+int activeIntersection = 3;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -139,7 +139,7 @@ bool onIntersection = false;
 // Nominal speed of robot
 double base_speed = 100;
 // RP motore speed
-int rpMotorSpeed = 400;
+int rpMotorSpeed = 300;
 // Tracks if robot has completed its turn
 bool turned = false;
 
@@ -241,12 +241,21 @@ void loop() {
       case 0:
         // move the robot backwards
         if (!(turned)) {
+
+          if (activeIntersection == 1) {
+            mdWheels.setSpeeds(base_speed, -base_speed);
+            delay(1000);
+            Turn();
+            base_speed = 200;
+          }
+
+
           mdWheels.setSpeeds(base_speed, -base_speed);
           delay(2000);
           Turn();
           base_speed = 200;
         } else
-          mdWheels.setSpeeds(-100, 100);
+          mdWheels.setSpeeds(-150, 150);
 
         turned = true;
         // look for the line
@@ -354,6 +363,7 @@ void CheckIntersection(void) {
       Turn();
       // set the robot going forward
       direction = 1;
+      base_speed = 150;
       // set the robot to going to the refinery
       goingToRefinery = true;
     }
@@ -468,8 +478,9 @@ void Turn(void) {
       wormRateChecked = false;
       if (safeZone) {
         angle = 1.1 * M_PI;
-      } else
+      } else {
         angle = M_PI;
+      }
 
       break;
     // robot is driving backwards from danger zone
@@ -477,7 +488,8 @@ void Turn(void) {
       mdWheels.setSpeeds(-75, 75);
       // delay(500);
       mdWheels.setSpeeds(0, 0);
-      angle = -6.9 * M_PI / 4.;
+      angle = M_PI / 2.75;
+      turnDir = -1;
       break;
     // first intefrsection
     case (1):
@@ -496,7 +508,9 @@ void Turn(void) {
       break;
     // third intersection
     case (3):
-      angle = M_PI / 10.;
+      mdWheels.setSpeeds(-150, 150);
+      delay(250);
+      angle = M_PI / 2;
       break;
     // Fourth intersection
     case (4):
@@ -661,31 +675,32 @@ void GrabBlock(void) {
   // drop arm
   armServo.write(175);
 
-  delay(2000);
+  delay(1000);
 
   CheckBlock();
 }
 
 void CheckBlock(void) {
 
-  int result = CheckColor();
+  // int result = CheckColor();
 
-  if (abs(analogRead(hallSensor)) > 330 || abs(analogRead(hallSensor)) < 315 || result == 2) {
+  if (abs(analogRead(hallSensor)) > 550 || abs(analogRead(hallSensor)) < 495) {  // || result == 2) {
     PushBlock();
     return;
-  } else if (result == -1) {
-    activeIntersection += 1;
-    direction = 0;
-    currIntersection = -1;
-    turned = false;
-    MoveArmBackward();
   } else
     PullBlock();
-  if (blockCount == 2) {
+  if (blockCount >= 2) {
     direction = 0;
     currIntersection = -1;
     turned = false;
+    atWall = false;
   }
+  // } else if (result == -1) {
+  //   activeIntersection += 1;
+  //   direction = 0;
+  //   currIntersection = -1;
+  //   turned = false;
+  //   MoveArmBackward();
 }
 
 int CheckColor(void) {
@@ -787,7 +802,7 @@ void PushBlock(void) {
 
   mdRP.setM1Speed(-rpMotorSpeed);
 
-  delay(2500);
+  delay(1500);
 
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
@@ -803,6 +818,7 @@ void PushBlock(void) {
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
+  blockCount += 1;
 }
 
 void PullBlock(void) {
@@ -827,29 +843,27 @@ void DispenseBlock(void) {
 
   armServo.write(0);
 
-  mdRP.setM1Speed(rpMotorSpeed);
 
   MoveArmForward();
-
-  mdRP.setM1Speed(-rpMotorSpeed);
 
   MoveArmBackward();
 
   armServo.write(160);
 
+  delay(500);
+
   mdRP.setM1Speed(rpMotorSpeed);
 
-  delay(2000);
+  delay(1000);
 
-  // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
   mdRP.setM1Speed(0);
 
   mdRP.setM1Speed(-rpMotorSpeed);
 
-  delay(1200);
-
   armServo.write(0);
+
+  delay(1000);
 
   // stop the rp motor
   mdRP.setM1Brake(rpMotorSpeed);
@@ -880,7 +894,7 @@ void MoveArmForward(void) {
   // initial read on pin
   int frontSwitchVal = digitalRead(frontSwitchPin);
 
-  mdRP.setM1Speed(-rpMotorSpeed);
+  mdRP.setM1Speed(rpMotorSpeed);
 
   // read pin until pressed
   while (frontSwitchVal != 0) {
