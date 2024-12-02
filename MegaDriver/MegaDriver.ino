@@ -129,7 +129,7 @@ bool goingToRefinery = false;
 // Determines if intersection has been reached
 bool intersetionReached = false;
 // Defines what intersection is currently active
-int activeIntersection = 3;
+int activeIntersection = 2;
 // Defines what intersection the robot is currently at
 int currIntersection = 1;
 // Checks whether line sensor is on intersection
@@ -358,7 +358,6 @@ void CheckIntersection(void) {
       // reset the current intersection
       currIntersection = 0;
 
-      delay(250);
       // turn the robot
       Turn();
       // set the robot going forward
@@ -366,6 +365,7 @@ void CheckIntersection(void) {
       base_speed = 150;
       // set the robot to going to the refinery
       goingToRefinery = true;
+      atWall = false;
     }
   } else {
     // if the sensor average is greater than 1200
@@ -485,10 +485,10 @@ void Turn(void) {
       break;
     // robot is driving backwards from danger zone
     case (0):
-      mdWheels.setSpeeds(-75, 75);
-      // delay(500);
+      mdWheels.setSpeeds(-150, 150);
+      delay(250);
       mdWheels.setSpeeds(0, 0);
-      angle = M_PI / 2.75;
+      angle = M_PI / 2.6;
       turnDir = -1;
       break;
     // first intefrsection
@@ -498,7 +498,9 @@ void Turn(void) {
         turnDir = -1;
         break;
       }
-      angle = M_PI / 1.5;
+      mdWheels.setSpeeds(-150, 150);
+      delay(250);
+      angle = M_PI / 2;
       break;
     // second intersection
     case (2):
@@ -514,7 +516,9 @@ void Turn(void) {
       break;
     // Fourth intersection
     case (4):
-      angle = M_PI / 10.;
+      mdWheels.setSpeeds(-150, 150);
+      delay(250);
+      angle = M_PI / 2.;
       break;
   };
 
